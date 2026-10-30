@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNIVERSE 3D EXPERIENCE</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            z-index: 100;
+            text-shadow: 0 0 10px rgba(0, 200, 255, 0.8);
+        }
+        #ui-layer h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 2px; }
+        #ui-layer p { margin: 5px 0 0 0; font-size: 12px; opacity: 0.7; letter-spacing: 1px; }
+        
+        /* Tùy chỉnh panel GUI */
+        .lil-gui { 
+            --background-color: rgba(15, 15, 20, 0.9);
+            --text-color: #e0e0e0;
+            font-family: inherit;
+        }
+    </style>
+    
+    <!-- ES Modules Polyfill cho trình duyệt cũ -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <!-- Thiết lập Import Maps -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/",
+          "lil-gui": "https://unpkg.com/lil-gui@0.18.0/dist/lil-gui.esm.js"
+        }
+      }
+    </script>
+</head>
+<body>
+    <div id="ui-layer">
+        <h1>Universe 3D</h1>
+        <p>Kéo chuột để xoay | Cuộn để phóng to/thu nhỏ</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import GUI from 'lil-gui';
+
+        // 1. KHỞI TẠO SCENE, CAMERA, RENDERER
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x020205, 0.0002); // Hiệu ứng chiều sâu không gian
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);
+        camera.position.set(0, 600, 1500);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        // Tone mapping để xử lý ánh sáng và hiệu ứng phát sáng mượt hơn
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 10000;
+        controls.minDistance = 50;
+
+        // 2. THÔNG SỐ VŨ TRỤ
+        const params = {
+            starsCount: 150000,
+            starSize: 2.5,
+            galaxyRadius: 2500,
+            branches: 5,
+            spin: 1.2,
+            randomness: 0.3,
+            randomnessPower: 3,
+            insideColor: '#ff3366',
+            outsideColor: '#00ccff',
+            orbitSpeed: 0.001,
+            showBlackHole: true
+        };
+
+        let galaxyGeometry = null;
+        let galaxyMaterial = null;
+        let galaxyPoints = null;
+
+        // 3. THUẬT TOÁN TẠO THIÊN HÀ XOẮN ỐC (SPIRAL GALAXY)
+        const generateGalaxy = () => {
+            if (galaxyPoints !== null) {
+                galaxyGeometry.dispose();
+                galaxyMaterial.dispose();
+                scene.remove(galaxyPoints);
+            }
+
+            galaxyGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(params.starsCount * 3);
+            const colors = new Float32Array(params.starsCount * 3);
+
+            const colorInside = new THREE.Color(params.insideColor);
+            const colorOutside = new THREE.Color(params.outsideColor);
+
+            for (let i = 0; i < params.starsCount; i++) {
+                const i3 = i * 3;
+                const radius = Math.random() * params.galaxyRadius;
+                const spinAngle = radius * params.spin;
+                const branchAngle = (i % params.branches) / params.branches * Math.PI * 2;
+                
+                // Toán học để phân bổ hạt ngẫu nhiên tụ lại ở tâm các nhánh
+                const randomX = Math.pow(Math.random(), params.randomnessPower) * (Math.random() < 0.5 ? 1 : - 1) * params.randomness * radius;
+                const randomY = Math.pow(Math.random(), params.randomnessPower) * (Math.random() < 0.5 ? 1 : - 1) * params.randomness * radius;
+                const randomZ = Math.pow(Math.random(), params.randomnessPower) * (Math.random() < 0.5 ? 1 : - 1) * params.randomness * radius;
+
+                positions[i3    ] = Math.cos(branchAngle + spinAngle) * radius + randomX;
+                positions[i3 + 1] = randomY;
+                positions[i3 + 2] = Math.sin(branchAngle + spinAngle) * radius + randomZ;
+
+                // Tính toán màu sắc dựa trên khoảng cách tới tâm
+                const mixedColor = colorInside.clone();
+                mixedColor.lerp(colorOutside, radius / params.galaxyRadius);
+                
+                colors[i3    ] = mixedColor.r;
+                colors[i3 + 1] = mixedColor.g;
+                colors[i3 + 2] = mixedColor.b;
+            }
+
+            galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            galaxyMaterial = new THREE.PointsMaterial({
+                size: params.starSize,
+                sizeAttenuation: true,
+                depthWrite: false, // Hỗ trợ blending các hạt
+                blending: THREE.AdditiveBlending, // Tạo hiệu ứng Glow khi các điểm xếp chồng
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            galaxyPoints = new THREE.Points(galaxyGeometry, galaxyMaterial);
+            scene.add(galaxyPoints);
+        };
+        generateGalaxy();
+
+        // 4. MÔ PHỎNG HỐ ĐEN (BLACK HOLE & ACCRETION DISK)
+        const bhGroup = new THREE.Group();
+        
+        // Hạt tâm hố đen (Event Horizon)
+        const bhGeometry = new THREE.SphereGeometry(80, 64, 64);
+        const bhMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const blackHole = new THREE.Mesh(bhGeometry, bhMaterial);
+        bhGroup.add(blackHole);
+
+        // Đĩa bồi tụ (Accretion Disk)
+        const diskGeometry = new THREE.RingGeometry(110, 300, 128);
+        const diskMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffaa33, 
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+        const disk = new THREE.Mesh(diskGeometry, diskMaterial);
+        disk.rotation.x = Math.PI * 0.45; // Xoay chéo
+        bhGroup.add(disk);
+
+        // Hào quang tỏa sáng (Aura)
+        const auraGeometry = new THREE.SphereGeometry(85, 64, 64);
+        const auraMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff6600,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+        const aura = new THREE.Mesh(auraGeometry, auraMaterial);
+        bhGroup.add(aura);
+        
+        scene.add(bhGroup);
+
+        // 5. CÁC HẠT SAO NỀN (DEEP SPACE STARS)
+        const bgStarsGeo = new THREE.BufferGeometry();
+        const bgStarsCount = 10000;
+        const bgStarsPos = new Float32Array(bgStarsCount * 3);
+        for(let i=0; i<bgStarsCount*3; i++) {
+            bgStarsPos[i] = (Math.random() - 0.5) * 20000;
+        }
+        bgStarsGeo.setAttribute('position', new THREE.BufferAttribute(bgStarsPos, 3));
+        const bgStarsMat = new THREE.PointsMaterial({ size: 3, color: 0xffffff, transparent: true, opacity: 0.6 });
+        const backgroundStars = new THREE.Points(bgStarsGeo, bgStarsMat);
+        scene.add(backgroundStars);
+
+        // 6. GIAO DIỆN TƯƠNG TÁC (LIL-GUI)
+        const gui = new GUI({ title: 'Bảng Điều Khiển Vũ Trụ' });
+        
+        const coreFolder = gui.addFolder('Kiến trúc Thiên hà');
+        coreFolder.add(params, 'starsCount', 10000, 300000, 1000).name('Số lượng Hạt').onFinishChange(generateGalaxy);
+        coreFolder.add(params, 'branches', 2, 10, 1).name('Số nhánh').onFinishChange(generateGalaxy);
+        coreFolder.add(params, 'galaxyRadius', 500, 5000, 100).name('Bán kính').onFinishChange(generateGalaxy);
+        
+        const styleFolder = gui.addFolder('Màu sắc & Chuyển động');
+        styleFolder.addColor(params, 'insideColor').name('Màu lõi').onFinishChange(generateGalaxy);
+        styleFolder.addColor(params, 'outsideColor').name('Màu viền').onFinishChange(generateGalaxy);
+        styleFolder.add(params, 'orbitSpeed', 0, 0.005).name('Tốc độ xoay');
+        styleFolder.add(params, 'showBlackHole').name('Hiển thị Hố Đen').onChange(v => bhGroup.visible = v);
+        
+        const actions = {
+            resetCam: () => { 
+                camera.position.set(0, 600, 1500); 
+                controls.target.set(0,0,0); 
+            },
+            cyberpunkTheme: () => {
+                params.insideColor = '#9d00ff';
+                params.outsideColor = '#00f7ff';
+                generateGalaxy();
+            }
+        };
+        gui.add(actions, 'cyberpunkTheme').name('Chủ đề Cyberpunk');
+        gui.add(actions, 'resetCam').name('Khôi phục Góc nhìn');
+
+        // 7. RESPONSIVE VÀ ANIMATION LOOP
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const clock = new THREE.Clock();
+
+        const animate = () => {
+            const elapsedTime = clock.getElapsedTime();
+
+            // Chuyển động xoắn ốc của toàn bộ thiên hà
+            if (galaxyPoints) galaxyPoints.rotation.y = elapsedTime * params.orbitSpeed;
+            
+            // Chuyển động đĩa bồi tụ của hố đen
+            disk.rotation.z = -elapsedTime * 0.4;
+            // Hiệu ứng hô hấp của ánh sáng quanh hố đen
+            aura.scale.setScalar(1 + Math.sin(elapsedTime * 3) * 0.03);
+            
+            // Xoay chậm nền vũ trụ
+            backgroundStars.rotation.y = elapsedTime * (params.orbitSpeed * 0.1);
+            backgroundStars.rotation.x = elapsedTime * (params.orbitSpeed * 0.05);
+
+            controls.update();
+            renderer.render(scene, camera);
+            window.requestAnimationFrame(animate);
+        };
+
+        animate();
+    </script>
+</body>
+</html>
